@@ -6,6 +6,9 @@ using iText.Kernel.Font;
 using iText.Kernel.Pdf.Annot;
 using System.Text.Json;
 using iText.IO.Font;
+using iText.IO.Image;
+using iText.Kernel.Pdf.Xobject;
+using iText.Kernel.Geom;
 
 
 namespace PdfEdit.Controllers
@@ -25,7 +28,7 @@ namespace PdfEdit.Controllers
             if (file != null && file.Length > 0)
             {
                 Directory.CreateDirectory(_uploadPath);
-                string filePath = Path.Combine(_uploadPath, file.FileName);
+                string filePath = System.IO.Path.Combine(_uploadPath, file.FileName);
 
                 using (var stream = new FileStream(filePath, FileMode.Create))
                 {
@@ -46,8 +49,8 @@ namespace PdfEdit.Controllers
         [HttpPost]
         public IActionResult SavePdf([FromBody] PdfSaveRequest request)
         {
-            string inputFilePath = Path.Combine(_uploadPath, request.FileName);
-            string outputFilePath = Path.Combine(_uploadPath, "modified_" + request.FileName);
+            string inputFilePath = System.IO.Path.Combine(_uploadPath, request.FileName);
+            string outputFilePath = System.IO.Path.Combine(_uploadPath, "modified_" + request.FileName);
 
             if (!System.IO.File.Exists(inputFilePath))
             {
@@ -68,22 +71,43 @@ namespace PdfEdit.Controllers
                             float pageHeight = page.GetPageSize().GetHeight(); // Get PDF page height
 
                             PdfCanvas canvas = new PdfCanvas(page);
-                            PdfFont font = PdfFontFactory.CreateFont(iText.IO.Font.Constants.StandardFonts.HELVETICA,
-                                          PdfEncodings.WINANSI,
-                                          PdfFontFactory.EmbeddingStrategy.PREFER_EMBEDDED);
+                            
 
-                            float fontSize = 16;
+                            
+                            if (annotation.IsIcon)
+                            {
+                                string iconPath = System.IO.Path.Combine(_uploadPath, annotation.IconFileName);
+                                if (System.IO.File.Exists(iconPath))
+                                {
+                                    float iconWidth = 20;
+                                    float iconHeight = 20;
+                                    ImageData imageData = ImageDataFactory.Create(iconPath);
+                                    PdfImageXObject imageXObject = new PdfImageXObject(imageData);
+                                    Rectangle iconRectangle = new Rectangle(annotation.X, annotation.Y - iconHeight, iconWidth, iconHeight);
 
-                            // 🔹 Fix the Y-coordinate flipping by subtracting from pageHeight
-                            float adjustedY = pageHeight - annotation.Y;
+                                    // Draw image in the defined rectangle
+                                    canvas.AddImageFittedIntoRectangle(imageData, iconRectangle, false);
+                                    //canvas.AddXObjectAt(imageXObject, annotation.X, annotation.Y - iconHeight, iconWidth, iconHeight);
+                                }
+                            }
+                            else if (annotation.IsText)
+                            {
+                                PdfFont font = PdfFontFactory.CreateFont(iText.IO.Font.Constants.StandardFonts.HELVETICA,
+                                         PdfEncodings.WINANSI,
+                                         PdfFontFactory.EmbeddingStrategy.PREFER_EMBEDDED); 
+                                float fontSize = 16;
 
-                            // ✅ Make sure text aligns correctly (subtract half the font size)
-                            canvas.BeginText()
-                                .SetFontAndSize(font, fontSize)
-                                .MoveText(annotation.X, annotation.Y) // **FIXED Y FLIPPING**
-                                .ShowText(annotation.Text)
-                                .EndText()
-                                .Release();
+                                // 🔹 Fix the Y-coordinate flipping by subtracting from pageHeight
+                                float adjustedY = pageHeight - annotation.Y;
+
+                                // ✅ Make sure text aligns correctly (subtract half the font size)
+                                canvas.BeginText()
+                                    .SetFontAndSize(font, fontSize)
+                                    .MoveText(annotation.X, annotation.Y) // **FIXED Y FLIPPING**
+                                    .ShowText(annotation.Text)
+                                    .EndText()
+                                    .Release();
+                            }
                         }
                         else
                         {
@@ -111,15 +135,18 @@ namespace PdfEdit.Controllers
         public class PdfSaveRequest
         {
             public string FileName { get; set; }
-            public List<PdfAnnotation> Annotations { get; set; }
+            public List<AnnotationRequest> Annotations { get; set; }
         }
 
-        public class PdfAnnotation
+        public class AnnotationRequest
         {
             public int PageNumber { get; set; }
             public float X { get; set; }
             public float Y { get; set; }
             public string Text { get; set; }
+            public bool IsText { get; set; } = false;
+            public bool IsIcon { get; set; } = false;
+            public string IconFileName { get; set; } // Path to the icon
         }
     }
 }
